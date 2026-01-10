@@ -1,1 +1,19 @@
+--DDL Queries : Create a Bronze Tables--
 
+This tables directly Extracted as it is from Source files of ".csv" without writing a query of create table
+
+  -- Stored Procedure: Load Bronze Layer (Source -> Bronze)-- 
+
+delimiter $$
+create procedure bronze.load_bronze()
+BEGIN
+	select "Loading Bronze Procedure";
+    SELECT * FROM Bronze.cust_info;
+    SELECT * FROM Bronze.prd_info;
+    SELECT * FROM Bronze.loc_a101;
+    SELECT * FROM Bronze.px_cat_g1v2;
+    SELECT * FROM Bronze.sales_details;
+    SELECT * FROM Bronze.cust_az12;
+END $$
+
+DELIMITER ;
