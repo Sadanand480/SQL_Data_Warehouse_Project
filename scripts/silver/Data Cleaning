@@ -1,1 +1,344 @@
+-- Data Cleaning of Silver Tables-- 
 
+/* Data Cleaning of Silver.Customer Information
+Check Nulls & Duplicates in Primary Key of Bronze.cust_info */ 
+
+select cst_id,
+count(*) from bronze.cust_info
+group by cst_id
+having count(*) > 1 or cst_id is null;
+
+select cst_id,
+count(*) from bronze.cust_info
+group by cst_id
+having cst_id is null;
+
+select *
+from(
+	select *,
+	rank() over (partition by cst_id order by cst_create_date desc) as flag_test
+	from bronze.cust_info
+)t
+where flag_test = 1 and cst_id = 29433;
+
+-- Check Unwated Spaces-- 
+select cst_firstname
+from bronze.cust_info
+where cst_firstname != trim(cst_firstname);
+
+select *
+from(
+	select cst_firstname,
+    trim(cst_firstname)
+    from bronze.cust_info
+)t;
+
+select 
+	cst_id,
+	cst_key,
+	trim(cst_firstname) as cst_firstname,
+	trim(cst_lastname) as cst_lastname,
+	trim(cst_marital_status) as cst_marital_status,
+	trim(cst_gndr) as cst_gndr,
+	cst_create_date
+from bronze.cust_info;
+
+-- Data Standardization & Consistency -- 
+select distinct cst_marital_status
+from bronze.cust_info;
+
+select distinct cst_gndr
+from bronze.cust_info;
+
+update bronze.cust_info
+set cst_gndr = "Male"
+where cst_gndr = "M";
+
+update bronze.cust_info
+set cst_gndr = "Female"
+where cst_gndr = "F";
+
+insert into silver.cust_info(
+	cst_id,
+    cst_key,
+    cst_firstname,
+    cst_lastname,
+    cst_marital_status,
+    cst_gndr,
+    cst_create_date,
+    etl_load_date)
+select 
+	cst_id,
+	cst_key,
+	trim(cst_firstname) as cst_firstname,
+	trim(cst_lastname) as cst_lastname,
+    case
+		when trim(cst_marital_status) = "S" then "Single"
+        when trim(cst_marital_status) = "M" then "Married"
+	end as cst_marital_status,
+	trim(cst_gndr) as cst_gndr,
+	cst_create_date,
+    current_timestamp
+    from (
+		select *,
+		rank() over (partition by cst_id order by cst_create_date desc) as flag_test
+		from bronze.cust_info
+	)t
+	where flag_test = 1;
+
+-- Change string function into Date function of Product end date--  
+ALTER TABLE silver.prd_info
+ADD prd_end_dt DATE;
+
+UPDATE silver.prd_info
+SET prd_end_dt = STR_TO_DATE(prd_start_dt_0, '%d-%m-%Y');
+ 
+alter table silver.prd_info
+drop column prd_start_dt_0;
+
+-- Change string function into Date function of Product start date-- 
+alter table silver.prd_info
+add column prd_start_dt1 date;
+
+update silver.prd_info
+set prd_start_dt1 = str_to_date(prd_start_dt,'%d-%m-%Y');
+
+ALTER TABLE silver.prd_info
+CHANGE COLUMN prd_start_dt1 prd_start_date DATE;
+
+alter table silver.prd_info
+drop column prd_start_dt;
+
+-- Check for Invalid Date Orders-- 
+-- End Date must not be erailer than Start date--
+
+select * 
+from silver.prd_info
+where prd_end_dt < prd_start_date;
+
+/*Data Cleaning of Silver.Sales Details
+ Check Unwanted Spaces*/
+ 
+select sls_ord_num from bronze.sales_details
+where sls_ord_num != trim(sls_ord_num);
+
+select sls_prd_key from bronze.sales_details
+where sls_prd_key != trim(sls_prd_key);
+
+-- Check is Foregin key is properly or not-- 
+select * from bronze.sales_details
+where sls_prd_key not in (select prd_key from silver.prd_info);
+
+select * from bronze.sales_details
+where sls_cust_id not in (select cst_id from silver.cust_info);
+
+select * from bronze.sales_details
+where sls_prd_key = '';
+
+-- Check data type of all Dates-- 
+show columns from bronze.sales_details;
+
+-- Convert Date data type--
+-- Convert Date data type of sls_order_date--
+
+alter table bronze.sales_details
+add column sls_order_date date;
+
+update bronze.sales_details
+set sls_order_date = str_to_date(sls_order_dt ,'%Y%m%d');
+
+-- Convert Date data type of sls_ship_date--
+alter table bronze.sales_details
+add column sls_ship_date date;
+
+update bronze.sales_details
+set sls_ship_date = str_to_date(sls_ship_dt,'%Y%m%d');
+
+-- Convert Date data type of sls_due_date --
+alter table bronze.sales_details
+add column sls_due_date date;
+
+update bronze.sales_details
+set sls_due_date = str_to_date(sls_due_dt,'%Y%m%d');
+
+-- Drop all previous table --
+alter table bronze.sales_details
+drop column sls_order_dt;
+
+alter table bronze.sales_details
+drop column sls_ship_dt;
+
+alter table bronze.sales_details
+drop column sls_due_dt;
+
+-- Check Invalide Date Orders-- 
+select * from bronze.sales_details
+where sls_order_date > sls_ship_date or sls_order_date > sls_due_date;
+
+-- Check Data Consitency: Between Sales, Price, Quantity
+-- Sales = Price * Quantity
+-- Values must not be zerr, null or negative-- 
+
+select
+sls_sales,
+sls_quantity,
+sls_price
+from bronze.sales_details
+where sls_sales != sls_quantity * sls_price;
+
+-- Check data type of all Dates-- 
+show columns from silver.sales_details;
+
+-- Convert Date data type in Silver Schema-- 
+alter table silver.sales_details
+add column sls_order_date date;
+
+update silver.sales_details
+set sls_order_date = str_to_date(sls_order_dt ,'%Y%m%d');
+
+alter table silver.sales_details
+add column sls_ship_date date;
+
+update silver.sales_details
+set sls_ship_date = str_to_date(sls_ship_dt,'%Y%m%d');
+
+alter table silver.sales_details
+add column sls_due_date date;
+
+update silver.sales_details
+set sls_due_date = str_to_date(sls_due_dt,'%Y%m%d');
+
+alter table silver.sales_details
+drop column sls_order_dt;
+
+alter table silver.sales_details
+drop column sls_ship_dt;
+
+alter table silver.sales_details
+drop column sls_due_dt;
+
+-- Insert all Data into the Silver sales details from Bronze sales datils--
+insert into silver.sales_details(
+	sls_ord_num,
+    sls_prd_key,
+    sls_cust_id,
+    sls_sales,
+    sls_quantity,
+    sls_price,
+    etl_load_date, 
+    sls_order_date,
+    sls_ship_date,
+    sls_due_date)
+select
+	sls_ord_num,
+    sls_prd_key,
+    sls_cust_id,
+    sls_sales,
+    sls_quantity,
+    sls_price,
+    current_timestamp,
+    sls_order_date,
+    sls_ship_date,
+    sls_due_date
+from bronze.sales_details;
+
+/* Data Cleaning of Silver.cust_az1
+Check Null Values*/
+
+select * from silver.cust_az12
+where bdate = '';
+
+select * from silver.cust_az12
+where CID = '';
+
+select * from silver.cust_az12
+where GEN = '';
+
+-- Convert String Data type into Date Data type of Birth Date-- 
+alter table silver.cust_az12
+add column birth_date date;
+
+update silver.cust_az12
+set birth_date = str_to_date(bdate, '%d-%m-%Y')
+WHERE bdate REGEXP '^[0-9]{2}-[0-9]{2}-[0-9]{4}$';
+
+-- Divide column in 2 part for foregin key-- 
+alter table silver.cust_az12
+add column ccid varchar(25);
+
+update silver.cust_az12
+set ccid = substr(cid,1,3);
+
+alter table silver.cust_az12
+add column cst_key varchar(25);
+
+update silver.cust_az12
+set cst_key = substr(cid,4,length(cid));
+
+alter table silver.cust_az12
+drop column cid;
+
+-- Check for out of range Birth date-- 
+select distinct
+birth_date
+from silver.cust_az12
+where birth_date < '1925-01-01' or birth_date > curdate();
+
+-- Update that date into Null-- 
+update silver.cust_az12
+set birth_date = null
+where birth_date < '1925-01-01' or birth_date > curdate();
+
+-- Data Standardization & Consistency--
+select distinct
+GEN 
+from silver.cust_az12;
+
+-- Clean Gender Table--
+update silver.cust_az12
+set gen =trim(gen);
+
+update silver.cust_az12
+set gen = 'Male'
+where gen = 'M';
+
+update silver.cust_az12
+set gen = 'Female'
+where gen = 'F';
+
+update silver.cust_az12
+set gen = 'N/A'
+where gen = '';
+
+/*Data Cleaning of Silver.loc_a101
+Remove '-' form cid because,it is not matching to Silver.Customer key */
+
+update silver.loc_a101
+set cid =replace(cid,'-','');
+
+-- Data Standardization & Consistency--
+select distinct
+cntry
+from silver.loc_a101;
+
+UPDATE silver.loc_a101
+SET cntry = CASE
+              WHEN TRIM(cntry) = '' OR cntry = '' THEN 'N/A'
+              ELSE TRIM(cntry)
+            END;
+
+/* Data Cleaning of Silver.px_cat_g1v2
+Check Unwante Spaces */
+
+select * from silver.px_cat_g1v2
+where cat != trim(cat) or SUBCAT != trim(subcat) or MAINTENANCE != trim(MAINTENANCE);
+
+-- Data Standardization & Consistency--
+select distinct cat
+from silver.px_cat_g1v2;
+
+select distinct subcat
+from silver.px_cat_g1v2;
+
+select distinct MAINTENANCE
+from silver.px_cat_g1v2;
